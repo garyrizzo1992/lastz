@@ -70,8 +70,8 @@ def main():
         print("Bluestacks window not found.")
         return
 
-    # Bluestacks resolution
-    bluestacks_width, bluestacks_height = 2164, 933
+    # Dynamically get Bluestacks resolution
+    bluestacks_width, bluestacks_height = region[2], region[3]
 
     print("Monitoring Bluestacks window...")
     while True:
