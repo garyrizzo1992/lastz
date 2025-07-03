@@ -3,153 +3,303 @@ import numpy as np
 import pygetwindow as gw
 import pyautogui
 import time
-import os
+import threading
+import keyboard
+import subprocess
+import re
+import pytesseract
+import random
 
-def find_bluestacks_window():
-    """Find the Bluestacks window, activate it, and return its bounding box."""
-    print("Searching for Bluestacks window...")
+def get_adb_devices():
+    """Returns a dict mapping IP:port strings to device serials from `adb devices` output."""
+    result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+    devices = {}
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line and not line.startswith("List of devices"):
+            parts = line.split()
+            if len(parts) == 2 and parts[1] == "device":
+                devices[parts[0]] = parts[0]  # key and value are the same here
+    return devices
+
+class BotInstance(threading.Thread):
+    def __init__(self, window, image_paths, interval, device_id):
+        super().__init__(daemon=True)
+        self.window = window
+        self.image_paths = image_paths
+        self.interval = interval
+        self.device_id = device_id
+        self.running = True
+
+    def capture_window(self):
+        x, y, w, h = self.window.left, self.window.top, self.window.width, self.window.height
+        ignore_height = int(h * 0.1)
+        y += ignore_height
+        h -= ignore_height
+        screenshot = pyautogui.screenshot(region=(x, y, w, h))
+        return cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR), ignore_height
+
+    def find_image(self, template_path, screenshot, threshold=0.8):
+        template = cv2.imread(template_path, cv2.IMREAD_UNCHANGED)
+        if template is None:
+            return None
+        # If template has alpha channel, use it as mask
+        if template.shape[2] == 4:
+            template_rgb = template[:, :, :3]
+            mask = template[:, :, 3]
+            result = cv2.matchTemplate(screenshot, template_rgb, cv2.TM_CCOEFF_NORMED, mask=mask)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            if max_val >= threshold:
+                return max_loc
+        result_color = cv2.matchTemplate(screenshot, template[:, :, :3] if template.shape[2] == 4 else template, cv2.TM_CCOEFF_NORMED)
+        _, max_val_c, _, max_loc_c = cv2.minMaxLoc(result_color)
+        screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        template_gray = cv2.cvtColor(template[:, :, :3], cv2.COLOR_BGR2GRAY) if template.shape[2] == 4 else (cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) if len(template.shape) == 3 else template)
+        result_gray = cv2.matchTemplate(screenshot_gray, template_gray, cv2.TM_CCOEFF_NORMED)
+        _, max_val_g, _, max_loc_g = cv2.minMaxLoc(result_gray)
+        if max_val_c >= threshold:
+            return max_loc_c
+        elif max_val_g >= threshold:
+            return max_loc_g
+        return None
+
+    def adb_click(self, x, y, offset_up=20):
+        if not self.device_id:
+            print(f"[{self.window.title}] ERROR: device_id not set.")
+            return
+        # Reduced debug output
+        y = y - offset_up  # Move click up by offset_up pixels
+        cmd = ["adb", "-s", self.device_id, "shell", "input", "tap", str(x), str(y)]
+        # print(f"[{self.window.title}] Running command: {' '.join(cmd)}")
+        try:
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+        except Exception as e:
+            print(f"[{self.window.title}] ADB Exception: {e}")
+
+    def run(self):
+        last_action_time = None  # None ensures first run triggers the action immediately
+        print(f"[{self.window.title}] Bot started.")
+        while self.running:
+            now = time.time()
+            # print(f"[{self.window.title}] Loop start. now={now}, last_action_time={last_action_time}, running={self.running}")
+            if last_action_time is None or now - last_action_time >= 120:
+                print(f"[{self.window.title}] 2-min periodic action")
+                # TODO: Insert your periodic action here
+                # open world
+                self.adb_click(500, 960)
+                time.sleep(2)
+                screenshot, ignore_height = self.capture_window()
+                # print(f"[{self.window.title}] Checking for 2/2 troops image...")
+                if self.find_image("images/gather/2_2.png", screenshot, 0.95) is not None:
+                    print(f"[{self.window.title}] 2/2 troops used. skipping.")
+                    self.adb_click(500, 960)
+                    time.sleep(2)
+                else:
+                    # print(f"[{self.window.title}] 2/2 troops NOT found, proceeding with resource click.")
+                    self.adb_click(35, 811)
+                    time.sleep(2)
+                    screenshot2, ignore_height2 = self.capture_window()
+                    # resource = random.choice(["Zent", "Wood", "Food"])
+                    resource = random.choice([ "Food", "Wood"])
+                    # print(f"[{self.window.title}] Random resource selected: {resource}")
+                    if resource == "Wood":
+                        tap_loc = self.find_image("images/lumberyard.png", screenshot2, 0.8)
+                        # print(f"[{self.window.title}] Wood tap_loc: {tap_loc}")
+                        if tap_loc is not None:
+                            template = cv2.imread("images/lumberyard.png", cv2.IMREAD_UNCHANGED)
+                            template_h, template_w = template.shape[:2]
+                            tap_x = tap_loc[0] + (template_w // 2)
+                            tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
+                            self.adb_click(tap_x, tap_y)
+                            time.sleep(1)
+                    elif resource == "Food":
+                        tap_loc = self.find_image("images/farmland.png", screenshot2, 0.8)
+                        # print(f"[{self.window.title}] Food tap_loc: {tap_loc}")
+                        if tap_loc is not None:
+                            template = cv2.imread("images/farmland.png", cv2.IMREAD_UNCHANGED)
+                            template_h, template_w = template.shape[:2]
+                            tap_x = tap_loc[0] + (template_w // 2)
+                            tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
+                            self.adb_click(tap_x, tap_y)
+                            time.sleep(1)
+                    elif resource == "Zent":
+                        start_loc = self.find_image("images/farmland.png", screenshot2, 0.8)
+                        # print(f"[{self.window.title}] Zent start_loc: {start_loc}")
+                        if start_loc is not None:
+                            template = cv2.imread("images/farmland.png", cv2.IMREAD_UNCHANGED)
+                            template_h, template_w = template.shape[:2]
+                            start_x = start_loc[0] + (template_w // 2)
+                            start_y = ignore_height2 + start_loc[1] + (template_h // 2)
+                            end_x = 0
+                            end_y = start_y
+                            # print(f"[{self.window.title}] Swiping from ({start_x},{start_y}) to ({end_x},{end_y})")
+                            cmd = [
+                                "adb", "-s", self.device_id, "shell", "input", "swipe",
+                                str(start_x), str(start_y), str(end_x), str(end_y), "300"
+                            ]
+                            # print(f"[{self.window.title}] Running swipe command: {' '.join(cmd)}")
+                            try:
+                                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+                            except Exception as e:
+                                print(f"[{self.window.title}] ADB Exception during drag: {e}")
+                            tap_loc = self.find_image("images/zentmining.png", screenshot2, 0.8)
+                            # print(f"[{self.window.title}] Food tap_loc: {tap_loc}")
+                            if tap_loc is not None:
+                                template = cv2.imread("images/zentmining.png", cv2.IMREAD_UNCHANGED)
+                                template_h, template_w = template.shape[:2]
+                                tap_x = tap_loc[0] + (template_w // 2)
+                                tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
+                                self.adb_click(tap_x, tap_y)
+                                time.sleep(1)
+                    lvl = 6
+                    # print(f"[{self.window.title}] Setting level: {lvl}")
+                    if lvl == 1:
+                        self.adb_click(167, 861, offset_up=0)
+                        time.sleep(1)
+                    elif lvl == 2:
+                        self.adb_click(192, 861, offset_up=0)
+                        time.sleep(1)
+                    elif lvl == 3:
+                        self.adb_click(237, 861, offset_up=0)
+                        time.sleep(1)
+                    elif lvl == 4:
+                        self.adb_click(285, 861, offset_up=0)
+                        time.sleep(1)
+                    elif lvl == 5:
+                        self.adb_click(342, 861, offset_up=0)
+                        time.sleep(1)
+                    elif lvl == 6:
+                        self.adb_click(367, 861, offset_up=0)
+                        time.sleep(1)
+                    # print(f"[{self.window.title}] Clicking on world to finish periodic action.")
+                    self.adb_click(270, 915, offset_up=0)
+                    time.sleep(1)
+                    self.adb_click(261, 505, offset_up=20)
+                    time.sleep(1)
+                    self.adb_click(270, 581, offset_up=20)
+                    time.sleep(1)
+                    self.adb_click(279, 735, offset_up=20)
+                    time.sleep(1)
+                    self.adb_click(500, 960)
+                last_action_time = now
+            screenshot, ignore_height = self.capture_window()
+            for image_path in self.image_paths:
+                tap_loc = self.find_image(image_path, screenshot, 0.8)
+                # print(f"[{self.window.title}] Checking {image_path}, tap_loc={tap_loc}")
+                if tap_loc is not None:
+                    template = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+                    template_h, template_w = template.shape[:2]
+                    tap_x = tap_loc[0] + (template_w // 2)
+                    tap_y = ignore_height + tap_loc[1] + (template_h // 2)
+                    # print(f"[{self.window.title}] Clicking at ({tap_x}, {tap_y})")
+                    self.adb_click(tap_x, tap_y)
+                    time.sleep(1)
+                    if image_path == "images/troops/empty.png":
+                        # print(f"[{self.window.title}] Empty troops logic triggered.")
+                        self.adb_click(419, 955)
+                        time.sleep(1)
+                        self.adb_click(100, 100)
+                        time.sleep(1)
+                        cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]; subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+            time.sleep(self.interval)
+
+    def stop(self):
+        self.running = False
+
+def find_memu_windows():
+    print("Searching for MEmu windows...")
+    memu_windows = []
     for window in gw.getAllWindows():
-        print(f"Found window: {window.title}")  # Print all window titles
-        if 'BlueStacks' in window.title:  # Check for partial match
-            print(f"Matching window found: {window.title}")
-            window.activate()  # Bring the window to the foreground
-            return window.left, window.top, window.width, window.height
-    return None
+        if re.search(r'MEmu\s*[_\(]?(\d+)', window.title):
+            memu_windows.append(window)
+            print(f"Found MEmu window: '{window.title}'")
+    return memu_windows
 
-def capture_bluestacks_window(region):
-    """Capture the Bluestacks window as a screenshot, ignoring the top 10%."""
-    x, y, w, h = region
-    # Adjust the region to ignore the top 10% of the screen
-    ignore_height = int(h * 0.1)  # Calculate 10% of the height
-    y += ignore_height  # Move the top boundary down
-    h -= ignore_height  # Reduce the height to exclude the ignored area
-    screenshot = pyautogui.screenshot(region=(x, y, w, h))
-    return cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-
-def find_image_in_window(template_path, screenshot, threshold=0.7):  # Increased threshold to 0.7
-    """Find a specific image in the screenshot and debug matches."""
-    # Convert screenshot to grayscale
-    screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
-    # Load and convert template to grayscale
-    template = cv2.imread(template_path, cv2.IMREAD_UNCHANGED)
-    template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) if len(template.shape) == 3 else template
-    # Perform template matching
-    result = cv2.matchTemplate(screenshot_gray, template_gray, cv2.TM_CCOEFF_NORMED)
-    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-    
-    # Debugging: Print match confidence
-    print(f"Match confidence for {template_path}: {max_val}")
-    
-    if max_val >= threshold:
-        # Draw a rectangle around the match for debugging
-        h, w = template.shape[:2]
-        top_left = max_loc
-        bottom_right = (top_left[0] + w, top_left[1] + h)
-        debug_image = screenshot.copy()
-        cv2.rectangle(debug_image, top_left, bottom_right, (0, 255, 0), 2)
-        
-        # Save the debug image to a file
-        debug_filename = os.path.join("debug", f"debug_{os.path.basename(template_path)}")
-        cv2.imwrite(debug_filename, debug_image)
-        print(f"Debug image saved: {debug_filename}")
-        
-        return max_loc  # Top-left corner of the match
+def get_device_id_for_window(window_title, adb_devices):
+    match = re.search(r'MEmu\s*[_\(]?(\d+)', window_title)
+    if not match:
+        return None
+    instance_num = int(match.group(1))
+    # Create the expected port from instance_num:
+    expected_port = 21513 + (instance_num - 1) * 10
+    expected_device = f"127.0.0.1:{expected_port}"
+    if expected_device in adb_devices:
+        return expected_device
     return None
 
 def main():
-    # Paths to the images you want to detect
     image_paths = [
-        "images/rider.png", "images/assulter.png", "images/shooter.png", 
-        "images/train.png", "images/exp.png", "images/food.png", 
-        "images/zent.png", "images/wood.png", "images/steel.png", 
-        "images/electric.png", "images/chest.png"
+        "images/exp.png", "images/food.png", "images/electric.png", "images/zent.png",
+        "images/troops/raider.png", "images/troops/assulter.png", "images/troops/shooter.png" , "images/help.png", "images/wood.png"
     ]
-    interval = 10  # Check every 10 seconds
-    region = find_bluestacks_window()
-    if not region:
-        print("Bluestacks window not found.")
+    interval = 1
+    adb_devices = get_adb_devices()
+    if not adb_devices:
+        print("No adb devices found.")
+        return
+    memu_windows = find_memu_windows()
+    if not memu_windows:
+        print("No MEmu windows found.")
         return
 
-    # Dynamically get Bluestacks resolution
-    bluestacks_width, bluestacks_height = region[2], region[3]
+    # Prompt user for which instance(s) to run
+    print("\nAvailable MEmu instances:")
+    for idx, window in enumerate(memu_windows):
+        print(f"{idx+1}: {window.title}")
+    print("A: All instances")
 
-    print("Monitoring Bluestacks window...")
-    while True:
-        # Recalculate region in case the window is resized
-        region = find_bluestacks_window()
-        if not region:
-            print("Bluestacks window not found.")
+    selection = input("Select instance number (e.g. 1), or 'A' for all: ").strip().lower()
+    selected_windows = []
+    if selection == 'a':
+        selected_windows = memu_windows
+    else:
+        try:
+            idx = int(selection) - 1
+            if 0 <= idx < len(memu_windows):
+                selected_windows = [memu_windows[idx]]
+            else:
+                print("Invalid selection.")
+                return
+        except ValueError:
+            print("Invalid input.")
             return
 
-        screenshot = capture_bluestacks_window(region)
-        for image_path in image_paths:
-            match_location = find_image_in_window(image_path, screenshot)
-            if match_location:
-                # Calculate the center of the match
-                x, y = match_location
-                ignore_height = int(region[3] * 0.1)  # Calculate 10% of the height
-                scale_x = region[2] / bluestacks_width  # Scale factor for width
-                scale_y = region[3] / bluestacks_height  # Scale factor for height
-                center_x = region[0] + int((x + (cv2.imread(image_path).shape[1] // 2)) * scale_x)
-                center_y = region[1] + ignore_height + int((y + (cv2.imread(image_path).shape[0] // 2)) * scale_y)
-                # Print and click the position
-                print(f"Found {image_path} at {match_location}, clicking at ({center_x}, {center_y})")
-                pyautogui.click(center_x, center_y)
-                time.sleep(interval)
-                if image_path == "images/train.png":
-                    time.sleep(interval)
-                    screenshot = capture_bluestacks_window(region)
-                    time.sleep(interval)
-                    match_location = find_image_in_window("images/train2.png", screenshot)
-                    if match_location:
-                        x, y = match_location
-                        center_x = region[0] + int((x + (cv2.imread("images/train2.png").shape[1] // 2)) * scale_x)
-                        center_y = region[1] + ignore_height + int((y + (cv2.imread("images/train2.png").shape[0] // 2)) * scale_y)
-                        pyautogui.click(center_x, center_y)
+    bots = []
+    for window in selected_windows:
+        device_id = get_device_id_for_window(window.title, adb_devices)
+        if device_id is None:
+            print(f"No adb device matched for window '{window.title}'")
+            continue
+        bot = BotInstance(window, image_paths, interval, device_id)
+        bots.append(bot)
 
-                    time.sleep(5)  # Wait for 5 seconds before the next click
+    if not bots:
+        print("No bots started.")
+        return
 
-                    screenshot = capture_bluestacks_window(region)
-                    match_location = find_image_in_window("images/back.png", screenshot)
-                    if match_location:
-                        x, y = match_location
-                        center_x = region[0] + int((x + (cv2.imread("images/back.png").shape[1] // 2)) * scale_x)
-                        center_y = region[1] + ignore_height + int((y + (cv2.imread("images/back.png").shape[0] // 2)) * scale_y)
-                        pyautogui.click(center_x, center_y)
+    keyboard.add_hotkey('ctrl+shift+q', lambda: [setattr(bot, 'running', False) for bot in bots])
+    print("Press Ctrl+Shift+Q to stop all bots.")
 
-                if image_path == "images/chest.png":
-                    time.sleep(interval)
-                    screenshot = capture_bluestacks_window(region)
-                    time.sleep(interval)
-                    match_location = find_image_in_window("images/chest_claim.png", screenshot)
-                    if match_location:
-                        x, y = match_location
-                        center_x = region[0] + int((x + (cv2.imread("images/chest_claim.png").shape[1] // 2)) * scale_x)
-                        center_y = region[1] + ignore_height + int((y + (cv2.imread("images/chest_claim.png").shape[0] // 2)) * scale_y)
-                        pyautogui.click(center_x, center_y)
+    # Only start the bot threads, do NOT duplicate clicking logic here.
+    for i, bot in enumerate(bots):
+        bot.start()
+        if i < len(bots) - 1:
+            time.sleep(20)  # 20 second grace period between starting each bot
 
-                    time.sleep(interval)  # Wait for 5 seconds before the next click
-
-                    screenshot = capture_bluestacks_window(region)
-                    match_location = find_image_in_window("images/chest-claim.png", screenshot)
-                    if match_location:
-                        x, y = match_location
-                        center_x = region[0] + int((x + (cv2.imread("images/chest-claim.png").shape[1] // 2)) * scale_x)
-                        center_y = region[1] + ignore_height + int((y + (cv2.imread("images/chest-claim.png").shape[0] // 2)) * scale_y)
-                        pyautogui.click(center_x, center_y)
-
-                    time.sleep(interval)
-
-                    screenshot = capture_bluestacks_window(region)
-                    match_location = find_image_in_window("images/chest-collect.png", screenshot)
-                    if match_location:
-                        x, y = match_location
-                        center_x = region[0] + int((x + (cv2.imread("images/chest-collect.png").shape[1] // 2)) * scale_x)
-                        center_y = region[1] + ignore_height + int((y + (cv2.imread("images/chest-collect.png").shape[0] // 2)) * scale_y)
-                        pyautogui.click(center_x, center_y)
-
-                    time.sleep(interval)
-        time.sleep(interval)
+    try:
+        while any(bot.running for bot in bots):
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt received. Stopping all bots...")
+        for bot in bots:
+            bot.running = False
+    print("All bots stopped.")
 
 if __name__ == "__main__":
     main()
+    print("All bots stopped.")
+    print("All bots stopped.")
+
+if __name__ == "__main__":
+    main()
+    print("All bots stopped.")
