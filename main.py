@@ -86,17 +86,17 @@ class BotInstance(threading.Thread):
                 # TODO: Insert your periodic action here
                 # open world
                 self.adb_click(500, 960)
-                time.sleep(2)
+                time.sleep(5)
                 screenshot, ignore_height = self.capture_window()
                 # print(f"[{self.window.title}] Checking for 2/2 troops image...")
                 if self.find_image("images/gather/2_2.png", screenshot, 0.95) is not None:
                     print(f"[{self.window.title}] 2/2 troops used. skipping.")
                     self.adb_click(500, 960)
-                    time.sleep(2)
+                    time.sleep(5)
                 else:
                     # print(f"[{self.window.title}] 2/2 troops NOT found, proceeding with resource click.")
                     self.adb_click(35, 811)
-                    time.sleep(2)
+                    time.sleep(5)
                     screenshot2, ignore_height2 = self.capture_window()
                     # resource = random.choice(["Zent", "Wood", "Food"])
                     resource = random.choice([ "Food", "Wood"])
@@ -110,7 +110,7 @@ class BotInstance(threading.Thread):
                             tap_x = tap_loc[0] + (template_w // 2)
                             tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
                             self.adb_click(tap_x, tap_y)
-                            time.sleep(1)
+                            time.sleep(5)
                     elif resource == "Food":
                         tap_loc = self.find_image("images/farmland.png", screenshot2, 0.8)
                         # print(f"[{self.window.title}] Food tap_loc: {tap_loc}")
@@ -120,7 +120,7 @@ class BotInstance(threading.Thread):
                             tap_x = tap_loc[0] + (template_w // 2)
                             tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
                             self.adb_click(tap_x, tap_y)
-                            time.sleep(1)
+                            time.sleep(5)
                     elif resource == "Zent":
                         start_loc = self.find_image("images/farmland.png", screenshot2, 0.8)
                         # print(f"[{self.window.title}] Zent start_loc: {start_loc}")
@@ -149,36 +149,36 @@ class BotInstance(threading.Thread):
                                 tap_x = tap_loc[0] + (template_w // 2)
                                 tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
                                 self.adb_click(tap_x, tap_y)
-                                time.sleep(1)
+                                time.sleep(5)
                     lvl = 6
                     # print(f"[{self.window.title}] Setting level: {lvl}")
                     if lvl == 1:
                         self.adb_click(167, 861, offset_up=0)
-                        time.sleep(1)
+                        time.sleep(5)
                     elif lvl == 2:
                         self.adb_click(192, 861, offset_up=0)
-                        time.sleep(1)
+                        time.sleep(5)
                     elif lvl == 3:
                         self.adb_click(237, 861, offset_up=0)
-                        time.sleep(1)
+                        time.sleep(5)
                     elif lvl == 4:
                         self.adb_click(285, 861, offset_up=0)
-                        time.sleep(1)
+                        time.sleep(5)
                     elif lvl == 5:
                         self.adb_click(342, 861, offset_up=0)
-                        time.sleep(1)
+                        time.sleep(5)
                     elif lvl == 6:
                         self.adb_click(367, 861, offset_up=0)
-                        time.sleep(1)
+                        time.sleep(5)
                     # print(f"[{self.window.title}] Clicking on world to finish periodic action.")
                     self.adb_click(270, 915, offset_up=0)
-                    time.sleep(1)
+                    time.sleep(5)
                     self.adb_click(261, 505, offset_up=20)
-                    time.sleep(1)
+                    time.sleep(5)
                     self.adb_click(270, 581, offset_up=20)
-                    time.sleep(1)
+                    time.sleep(5)
                     self.adb_click(279, 735, offset_up=20)
-                    time.sleep(1)
+                    time.sleep(5)
                     self.adb_click(500, 960)
                 last_action_time = now
             screenshot, ignore_height = self.capture_window()
@@ -192,11 +192,11 @@ class BotInstance(threading.Thread):
                     tap_y = ignore_height + tap_loc[1] + (template_h // 2)
                     # print(f"[{self.window.title}] Clicking at ({tap_x}, {tap_y})")
                     self.adb_click(tap_x, tap_y)
-                    time.sleep(1)
+                    time.sleep(5)
                     if image_path == "images/troops/empty.png":
                         # print(f"[{self.window.title}] Empty troops logic triggered.")
                         self.adb_click(419, 955)
-                        time.sleep(1)
+                    time.sleep(5)
                         self.adb_click(100, 100)
                         time.sleep(1)
                         cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]; subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
@@ -262,6 +262,20 @@ def main():
         except ValueError:
             print("Invalid input.")
             return
+
+    # Move all selected windows side by side before starting bots
+    screen_x = 0
+    screen_y = 0
+    max_height = 0
+    for window in selected_windows:
+        try:
+            window.restore()  # Restore if minimized
+            window.moveTo(screen_x, screen_y)
+            screen_x += window.width
+            if window.height > max_height:
+                max_height = window.height
+        except Exception as e:
+            print(f"Could not move window '{window.title}': {e}")
 
     bots = []
     for window in selected_windows:
