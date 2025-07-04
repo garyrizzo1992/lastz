@@ -1,5 +1,6 @@
-pyautogui
 opencv-python
 numpy
 pygetwindow
-pillow
+pyautogui
+keyboard
+pytesseract
