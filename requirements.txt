@@ -3,4 +3,3 @@ numpy
 pygetwindow
 pyautogui
 keyboard
-pytesseract

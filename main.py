@@ -7,7 +7,6 @@ import threading
 import keyboard
 import subprocess
 import re
-import pytesseract
 import random
 
 def get_adb_devices():
