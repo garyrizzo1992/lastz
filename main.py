@@ -11,7 +11,7 @@ import random
 
 def get_adb_devices():
     """Returns a dict mapping IP:port strings to device serials from `adb devices` output."""
-    result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, shell=True)
     devices = {}
     for line in result.stdout.splitlines():
         line = line.strip()
@@ -71,7 +71,7 @@ class BotInstance(threading.Thread):
         cmd = ["adb", "-s", self.device_id, "shell", "input", "tap", str(x), str(y)]
         # print(f"[{self.window.title}] Running command: {' '.join(cmd)}")
         try:
-            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
         except Exception as e:
             print(f"[{self.window.title}] ADB Exception: {e}")
 
@@ -138,7 +138,7 @@ class BotInstance(threading.Thread):
                             ]
                             # print(f"[{self.window.title}] Running swipe command: {' '.join(cmd)}")
                             try:
-                                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+                                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
                             except Exception as e:
                                 print(f"[{self.window.title}] ADB Exception during drag: {e}")
                             tap_loc = self.find_image("images/zentmining.png", screenshot2, 0.8)
@@ -199,7 +199,7 @@ class BotInstance(threading.Thread):
                         time.sleep(1)
                         self.adb_click(100, 100)
                         time.sleep(1)
-                        cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]; subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+                        cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]; subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
             time.sleep(self.interval)
 
     def stop(self):
