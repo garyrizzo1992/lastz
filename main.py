@@ -196,7 +196,7 @@ class BotInstance(threading.Thread):
                     if image_path == "images/troops/empty.png":
                         # print(f"[{self.window.title}] Empty troops logic triggered.")
                         self.adb_click(419, 955)
-                    time.sleep(5)
+                        time.sleep(5)
                         self.adb_click(100, 100)
                         time.sleep(1)
                         cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]; subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
