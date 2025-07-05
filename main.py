@@ -9,6 +9,103 @@ import subprocess
 import re
 import random
 
+def run_bot_rotation():
+    from pymemuc import PyMemuc
+    memu = PyMemuc()
+    image_paths = [
+        "images/exp.png", "images/food.png", "images/electric.png", "images/zent.png",
+        "images/troops/raider.png", "images/troops/assulter.png", "images/troops/shooter.png" , "images/help.png", "images/wood.png",
+    ]
+    interval = 1
+    instance_count = 3
+    rotation_minutes = 5
+
+    def wait_for_emulator_ready(device_id, timeout=300):
+        start = time.time()
+        while time.time() - start < timeout:
+            result = subprocess.run(
+                ["adb", "-s", device_id, "shell", "getprop", "sys.boot_completed"],
+                capture_output=True, text=True, shell=True
+            )
+            if result.stdout.strip() == "1":
+                print(f"Emulator {device_id} boot completed.")
+                return True
+            time.sleep(2)
+        print(f"Timeout waiting for emulator {device_id} to boot.")
+        return False
+
+    for idx in range(1, instance_count+1):
+        print(f"\n=== Starting rotation for MEmu{idx} ===")
+        memu.start_vm(idx)
+        # Wait for emulator window to appear
+        for _ in range(60):
+            windows = gw.getAllWindows()
+            found = any(f"MEmu{idx}" in w.title for w in windows)
+            if found:
+                print(f"MEmu{idx} window detected.")
+                break
+            time.sleep(2)
+        else:
+            print(f"MEmu{idx} did not start in time, skipping.")
+            continue
+
+
+        # Get the window and device id
+        memu_windows = [w for w in gw.getAllWindows() if f"MEmu{idx}" in w.title]
+        if not memu_windows:
+            print(f"No window found for MEmu{idx}, skipping.")
+            memu.stop_vm(idx)
+            continue
+        window = memu_windows[0]
+        expected_port = 21513 + (idx-1)*10
+        device_id = f"127.0.0.1:{expected_port}"
+
+        # Wait for adb device to appear (up to 2 minutes)
+        adb_timeout = 120
+        adb_start = time.time()
+        while time.time() - adb_start < adb_timeout:
+            adb_devices = get_adb_devices()
+            if device_id in adb_devices:
+                break
+            print(f"Waiting for adb device {device_id}...")
+            time.sleep(2)
+        else:
+            print(f"No adb device for {device_id} after waiting, skipping.")
+            memu.stop_vm(idx)
+            continue
+
+        # Wait for emulator to be fully booted
+        if not wait_for_emulator_ready(device_id, timeout=300):
+            print(f"MEmu{idx} ({device_id}) did not boot in time, skipping.")
+            memu.stop_vm(idx)
+            continue
+
+        # Launch the app: com.readygo.barrel.gp/com.im30.aps.debug.UnityPlayerActivityCustom
+        launch_cmd = [
+            "adb", "-s", device_id, "shell", "am", "start", "-n",
+            "com.readygo.barrel.gp/com.im30.aps.debug.UnityPlayerActivityCustom"
+        ]
+        print(f"Launching Last Z: Survival Shooter on {device_id}...")
+        subprocess.run(launch_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        time.sleep(30)  # Give the app a few seconds to start
+
+        bot = BotInstance(window, image_paths, interval, device_id)
+        bot.start()
+        print(f"Bot running on MEmu{idx} for {rotation_minutes} minutes...")
+        # Let the bot run for the rotation period
+        for _ in range(rotation_minutes*60):
+            if not bot.running:
+                break
+            time.sleep(1)
+        bot.running = False
+        bot.join()
+        print(f"Stopping MEmu{idx}...")
+        memu.stop_vm(idx)
+        # Wait a bit before next instance
+        time.sleep(10)
+    print("All rotations complete.")
+
+
 def get_adb_devices():
     """Returns a dict mapping IP:port strings to device serials from `adb devices` output."""
     result = subprocess.run(["adb", "devices"], capture_output=True, text=True, shell=True)
@@ -77,110 +174,41 @@ class BotInstance(threading.Thread):
 
     def run(self):
         last_action_time = None  # None ensures first run triggers the action immediately
+        last_hourly_action_time = None  # Run hourly action immediately on startup
+        first_actions = 0
         print(f"[{self.window.title}] Bot started.")
         while self.running:
+            if first_actions == 0:
+                # Click escape until a certain image appears
+                escape_image = "images/home.png"  # Replace with your target image path
+                max_tries = 30
+                tries = 0
+                while tries < max_tries:
+                    screenshot, ignore_height = self.capture_window()
+                    found = self.find_image(escape_image, screenshot, 0.8)
+                    if found is not None:
+                        print(f"[{self.window.title}] Escape target image found.")
+                        break
+                    # Send ESC key event via adb
+                    cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]
+                    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+                    time.sleep(1)
+                    tries += 1
+                first_actions = 1
             now = time.time()
             # print(f"[{self.window.title}] Loop start. now={now}, last_action_time={last_action_time}, running={self.running}")
+            # 2-min periodic action
             if last_action_time is None or now - last_action_time >= 120:
                 print(f"[{self.window.title}] 2-min periodic action")
-                # TODO: Insert your periodic action here
-                # open world
-                self.adb_click(500, 960)
-                time.sleep(5)
-                screenshot, ignore_height = self.capture_window()
-                # print(f"[{self.window.title}] Checking for 2/2 troops image...")
-                if self.find_image("images/gather/2_2.png", screenshot, 0.95) is not None:
-                    print(f"[{self.window.title}] 2/2 troops used. skipping.")
-                    self.adb_click(500, 960)
-                    time.sleep(5)
-                else:
-                    # print(f"[{self.window.title}] 2/2 troops NOT found, proceeding with resource click.")
-                    self.adb_click(35, 811)
-                    time.sleep(5)
-                    screenshot2, ignore_height2 = self.capture_window()
-                    # resource = random.choice(["Zent", "Wood", "Food"])
-                    resource = random.choice([ "Food", "Wood"])
-                    # print(f"[{self.window.title}] Random resource selected: {resource}")
-                    if resource == "Wood":
-                        tap_loc = self.find_image("images/lumberyard.png", screenshot2, 0.8)
-                        # print(f"[{self.window.title}] Wood tap_loc: {tap_loc}")
-                        if tap_loc is not None:
-                            template = cv2.imread("images/lumberyard.png", cv2.IMREAD_UNCHANGED)
-                            template_h, template_w = template.shape[:2]
-                            tap_x = tap_loc[0] + (template_w // 2)
-                            tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
-                            self.adb_click(tap_x, tap_y)
-                            time.sleep(5)
-                    elif resource == "Food":
-                        tap_loc = self.find_image("images/farmland.png", screenshot2, 0.8)
-                        # print(f"[{self.window.title}] Food tap_loc: {tap_loc}")
-                        if tap_loc is not None:
-                            template = cv2.imread("images/farmland.png", cv2.IMREAD_UNCHANGED)
-                            template_h, template_w = template.shape[:2]
-                            tap_x = tap_loc[0] + (template_w // 2)
-                            tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
-                            self.adb_click(tap_x, tap_y)
-                            time.sleep(5)
-                    elif resource == "Zent":
-                        start_loc = self.find_image("images/farmland.png", screenshot2, 0.8)
-                        # print(f"[{self.window.title}] Zent start_loc: {start_loc}")
-                        if start_loc is not None:
-                            template = cv2.imread("images/farmland.png", cv2.IMREAD_UNCHANGED)
-                            template_h, template_w = template.shape[:2]
-                            start_x = start_loc[0] + (template_w // 2)
-                            start_y = ignore_height2 + start_loc[1] + (template_h // 2)
-                            end_x = 0
-                            end_y = start_y
-                            # print(f"[{self.window.title}] Swiping from ({start_x},{start_y}) to ({end_x},{end_y})")
-                            cmd = [
-                                "adb", "-s", self.device_id, "shell", "input", "swipe",
-                                str(start_x), str(start_y), str(end_x), str(end_y), "300"
-                            ]
-                            # print(f"[{self.window.title}] Running swipe command: {' '.join(cmd)}")
-                            try:
-                                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
-                            except Exception as e:
-                                print(f"[{self.window.title}] ADB Exception during drag: {e}")
-                            tap_loc = self.find_image("images/zentmining.png", screenshot2, 0.8)
-                            # print(f"[{self.window.title}] Food tap_loc: {tap_loc}")
-                            if tap_loc is not None:
-                                template = cv2.imread("images/zentmining.png", cv2.IMREAD_UNCHANGED)
-                                template_h, template_w = template.shape[:2]
-                                tap_x = tap_loc[0] + (template_w // 2)
-                                tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
-                                self.adb_click(tap_x, tap_y)
-                                time.sleep(5)
-                    lvl = 6
-                    # print(f"[{self.window.title}] Setting level: {lvl}")
-                    if lvl == 1:
-                        self.adb_click(167, 861, offset_up=0)
-                        time.sleep(5)
-                    elif lvl == 2:
-                        self.adb_click(192, 861, offset_up=0)
-                        time.sleep(5)
-                    elif lvl == 3:
-                        self.adb_click(237, 861, offset_up=0)
-                        time.sleep(5)
-                    elif lvl == 4:
-                        self.adb_click(285, 861, offset_up=0)
-                        time.sleep(5)
-                    elif lvl == 5:
-                        self.adb_click(342, 861, offset_up=0)
-                        time.sleep(5)
-                    elif lvl == 6:
-                        self.adb_click(367, 861, offset_up=0)
-                        time.sleep(5)
-                    # print(f"[{self.window.title}] Clicking on world to finish periodic action.")
-                    self.adb_click(270, 915, offset_up=0)
-                    time.sleep(5)
-                    self.adb_click(261, 505, offset_up=20)
-                    time.sleep(5)
-                    self.adb_click(270, 581, offset_up=20)
-                    time.sleep(5)
-                    self.adb_click(279, 735, offset_up=20)
-                    time.sleep(5)
-                    self.adb_click(500, 960)
+                self.do_2min_action()
                 last_action_time = now
+
+            # 1-hour periodic action placeholder
+            if  last_hourly_action_time is None or now - last_hourly_action_time >= 3600:
+                print(f"[{self.window.title}] 1-hour periodic action placeholder")
+                self.do_hourly_action()
+                last_hourly_action_time = time.time()
+
             screenshot, ignore_height = self.capture_window()
             for image_path in self.image_paths:
                 tap_loc = self.find_image(image_path, screenshot, 0.8)
@@ -192,15 +220,149 @@ class BotInstance(threading.Thread):
                     tap_y = ignore_height + tap_loc[1] + (template_h // 2)
                     # print(f"[{self.window.title}] Clicking at ({tap_x}, {tap_y})")
                     self.adb_click(tap_x, tap_y)
-                    time.sleep(5)
+                    time.sleep(1)
                     if image_path == "images/troops/empty.png":
                         # print(f"[{self.window.title}] Empty troops logic triggered.")
                         self.adb_click(419, 955)
-                        time.sleep(5)
+                        time.sleep(1)
                         self.adb_click(100, 100)
                         time.sleep(1)
                         cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]; subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
             time.sleep(self.interval)
+
+            screenshot, ignore_height = self.capture_window()
+    def do_2min_action(self):
+        # open world
+        self.adb_click(500, 960)
+        time.sleep(1)
+        screenshot, ignore_height = self.capture_window()
+        if self.find_image("images/gather/2_2.png", screenshot, 0.95) is not None:
+            print(f"[{self.window.title}] 2/2 troops used. skipping.")
+            self.adb_click(500, 960)
+            time.sleep(1)
+            return
+        self.adb_click(35, 811)
+        time.sleep(1)
+        screenshot2, ignore_height2 = self.capture_window()
+        resource = random.choice([ "Zent", "Wood", "Food" ])
+        if resource == "Wood":
+            tap_loc = self.find_image("images/lumberyard.png", screenshot2, 0.8)
+            if tap_loc is not None:
+                template = cv2.imread("images/lumberyard.png", cv2.IMREAD_UNCHANGED)
+                template_h, template_w = template.shape[:2]
+                tap_x = tap_loc[0] + (template_w // 2)
+                tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
+                self.adb_click(tap_x, tap_y)
+                time.sleep(1)
+        elif resource == "Food":
+            tap_loc = self.find_image("images/farmland.png", screenshot2, 0.8)
+            if tap_loc is not None:
+                template = cv2.imread("images/farmland.png", cv2.IMREAD_UNCHANGED)
+                template_h, template_w = template.shape[:2]
+                tap_x = tap_loc[0] + (template_w // 2)
+                tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
+                self.adb_click(tap_x, tap_y)
+                time.sleep(1)
+        elif resource == "Zent":
+            start_loc = self.find_image("images/farmland.png", screenshot2, 0.8)
+            # print(f"[{self.window.title}] Zent start_loc: {start_loc}")
+            if start_loc is not None:
+                template = cv2.imread("images/farmland.png", cv2.IMREAD_UNCHANGED)
+                template_h, template_w = template.shape[:2]
+                start_x = start_loc[0] + (template_w // 2)
+                start_y = ignore_height2 + start_loc[1] + (template_h // 2)
+                end_x = 0
+                end_y = start_y
+                # print(f"[{self.window.title}] Swiping from ({start_x},{start_y}) to ({end_x},{end_y})")
+                cmd = [
+                    "adb", "-s", self.device_id, "shell", "input", "swipe",
+                    str(start_x), str(start_y), str(end_x), str(end_y), "300"
+                ]
+                # print(f"[{self.window.title}] Running swipe command: {' '.join(cmd)}")
+                try:
+                    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+                except Exception as e:
+                    print(f"[{self.window.title}] ADB Exception during drag: {e}")
+                screenshot3, ignore_height3= self.capture_window()
+                tap_loc = self.find_image("images/zentmining.png", screenshot3, 0.8)
+                # print(f"[{self.window.title}] Food tap_loc: {tap_loc}")
+                if tap_loc is not None:
+                    template = cv2.imread("images/zentmining.png", cv2.IMREAD_UNCHANGED)
+                    template_h, template_w = template.shape[:2]
+                    tap_x = tap_loc[0] + (template_w // 2)
+                    tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
+                    self.adb_click(tap_x, tap_y)
+                    time.sleep(5)
+        if resource == "Zent":
+            lvl = 5
+        else:
+            lvl = 6
+        
+        if lvl == 1:
+            self.adb_click(167, 861, offset_up=0)
+            time.sleep(1)
+        elif lvl == 2:
+            self.adb_click(192, 861, offset_up=0)
+            time.sleep(1)
+        elif lvl == 3:
+            self.adb_click(237, 861, offset_up=0)
+            time.sleep(1)
+        elif lvl == 4:
+            self.adb_click(285, 861, offset_up=0)
+            time.sleep(1)
+        elif lvl == 5:
+            self.adb_click(342, 861, offset_up=0)
+            time.sleep(1)
+        elif lvl == 6:
+            self.adb_click(367, 861, offset_up=0)
+            time.sleep(1)
+        self.adb_click(270, 915)
+        time.sleep(1)
+        self.adb_click(261, 505, offset_up=20)
+        time.sleep(1)
+        self.adb_click(270, 581, offset_up=20)
+        time.sleep(1)
+        self.adb_click(279, 735, offset_up=20)
+        time.sleep(1)
+        self.adb_click(500, 960)
+
+    def do_hourly_action(self):
+        print(f"[{self.window.title}] [DEBUG] Clicking at (510, 755) for hourly action")
+        cmd = ["adb", "-s", self.device_id, "shell", "input", "tap", "510", "755"]
+        print(f"[{self.window.title}] [DEBUG] Running command: {' '.join(cmd)}")
+        self.adb_click(510, 755)
+        time.sleep(1)
+        self.adb_click(170, 630)
+        time.sleep(1)
+        screenshot2, ignore_height2 = self.capture_window()
+        tap_loc = self.find_image("images/gather/research_recommended.png", screenshot2, 0.8)
+        if tap_loc is not None:
+            template = cv2.imread("images/gather/research_recommended.png", cv2.IMREAD_UNCHANGED)
+            template_h, template_w = template.shape[:2]
+            tap_x = tap_loc[0] + (template_w // 2)
+            tap_y = ignore_height2 + tap_loc[1] + (template_h // 2)
+            self.adb_click(tap_x, tap_y)
+            time.sleep(1)
+            for i in range(20):
+                self.adb_click(360, 740)
+                time.sleep(0.3)
+            cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+            time.sleep(2)
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+            time.sleep(2)
+            self.adb_click(400, 630)
+            time.sleep(2)
+            self.adb_click(300, 950)
+            time.sleep(2)
+            cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+            time.sleep(2)
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+            time.sleep(2)
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+            # 1-hour periodic action placeholder                              
+            last_hourly_action_time = time.time()
 
     def stop(self):
         self.running = False
@@ -227,92 +389,7 @@ def get_device_id_for_window(window_title, adb_devices):
     return None
 
 def main():
-    image_paths = [
-        "images/exp.png", "images/food.png", "images/electric.png", "images/zent.png",
-        "images/troops/raider.png", "images/troops/assulter.png", "images/troops/shooter.png" , "images/help.png", "images/wood.png"
-    ]
-    interval = 1
-    adb_devices = get_adb_devices()
-    if not adb_devices:
-        print("No adb devices found.")
-        return
-    memu_windows = find_memu_windows()
-    if not memu_windows:
-        print("No MEmu windows found.")
-        return
-
-    # Prompt user for which instance(s) to run
-    print("\nAvailable MEmu instances:")
-    for idx, window in enumerate(memu_windows):
-        print(f"{idx+1}: {window.title}")
-    print("A: All instances")
-
-    selection = input("Select instance number (e.g. 1), or 'A' for all: ").strip().lower()
-    selected_windows = []
-    if selection == 'a':
-        selected_windows = memu_windows
-    else:
-        try:
-            idx = int(selection) - 1
-            if 0 <= idx < len(memu_windows):
-                selected_windows = [memu_windows[idx]]
-            else:
-                print("Invalid selection.")
-                return
-        except ValueError:
-            print("Invalid input.")
-            return
-
-    # Move all selected windows side by side before starting bots
-    screen_x = 0
-    screen_y = 0
-    max_height = 0
-    for window in selected_windows:
-        try:
-            window.restore()  # Restore if minimized
-            window.moveTo(screen_x, screen_y)
-            screen_x += window.width
-            if window.height > max_height:
-                max_height = window.height
-        except Exception as e:
-            print(f"Could not move window '{window.title}': {e}")
-
-    bots = []
-    for window in selected_windows:
-        device_id = get_device_id_for_window(window.title, adb_devices)
-        if device_id is None:
-            print(f"No adb device matched for window '{window.title}'")
-            continue
-        bot = BotInstance(window, image_paths, interval, device_id)
-        bots.append(bot)
-
-    if not bots:
-        print("No bots started.")
-        return
-
-    keyboard.add_hotkey('ctrl+shift+q', lambda: [setattr(bot, 'running', False) for bot in bots])
-    print("Press Ctrl+Shift+Q to stop all bots.")
-
-    # Only start the bot threads, do NOT duplicate clicking logic here.
-    for i, bot in enumerate(bots):
-        bot.start()
-        if i < len(bots) - 1:
-            time.sleep(20)  # 20 second grace period between starting each bot
-
-    try:
-        while any(bot.running for bot in bots):
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("KeyboardInterrupt received. Stopping all bots...")
-        for bot in bots:
-            bot.running = False
-    print("All bots stopped.")
+    run_bot_rotation()
 
 if __name__ == "__main__":
     main()
-    print("All bots stopped.")
-    print("All bots stopped.")
-
-if __name__ == "__main__":
-    main()
-    print("All bots stopped.")
