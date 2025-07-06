@@ -14,7 +14,7 @@ def run_bot_rotation():
     memu = PyMemuc()
     image_paths = [
         "images/exp.png", "images/food.png", "images/electric.png", "images/zent.png",
-        "images/troops/raider.png", "images/troops/assulter.png", "images/troops/shooter.png" , "images/help.png", "images/wood.png",
+        "images/troops/raider.png", "images/troops/assulter.png", "images/troops/shooter.png" , "images/help.png", "images/wood.png", "images/troops/empty.png",
     ]
     interval = 1
     instance_count = 3
