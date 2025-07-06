@@ -158,6 +158,10 @@ class BotInstance(threading.Thread):
         template = cv2.imread(template_path, cv2.IMREAD_UNCHANGED)
         if template is None:
             return None
+        # Scale template for DPI
+        if self.dpi_scaling != 1.0:
+            h, w = template.shape[:2]
+            template = cv2.resize(template, (int(w * self.dpi_scaling), int(h * self.dpi_scaling)), interpolation=cv2.INTER_LINEAR)
         # If template has alpha channel, use it as mask
         if template.shape[2] == 4:
             template_rgb = template[:, :, :3]
