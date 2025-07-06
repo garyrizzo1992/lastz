@@ -89,7 +89,25 @@ def run_bot_rotation():
         subprocess.run(launch_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         time.sleep(30)  # Give the app a few seconds to start
 
-        bot = BotInstance(window, image_paths, interval, device_id)
+        # DPI scaling detection (Windows only)
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            user32.SetProcessDPIAware()
+            screen_w = user32.GetSystemMetrics(0)
+            screen_w_real = user32.GetSystemMetrics(78)  # SM_CXVIRTUALSCREEN
+            dpi_scaling = screen_w_real / screen_w if screen_w > 0 else 1.0
+            if dpi_scaling < 1.01:
+                # fallback: try Windows API for DPI
+                hdc = user32.GetDC(0)
+                dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
+                dpi_scaling = dpi / 96.0
+            print(f"[DPI] Detected scaling: {dpi_scaling:.2f}x")
+        except Exception as e:
+            print(f"[DPI] Could not determine DPI scaling, defaulting to 1.0x: {e}")
+            dpi_scaling = 1.0
+
+        bot = BotInstance(window, image_paths, interval, device_id, dpi_scaling=dpi_scaling)
         bot.start()
         print(f"Bot running on MEmu{idx} for {rotation_minutes} minutes...")
         # Let the bot run for the rotation period
@@ -119,13 +137,14 @@ def get_adb_devices():
     return devices
 
 class BotInstance(threading.Thread):
-    def __init__(self, window, image_paths, interval, device_id):
+    def __init__(self, window, image_paths, interval, device_id, dpi_scaling=1.0):
         super().__init__(daemon=True)
         self.window = window
         self.image_paths = image_paths
         self.interval = interval
         self.device_id = device_id
         self.running = True
+        self.dpi_scaling = dpi_scaling
 
     def capture_window(self):
         x, y, w, h = self.window.left, self.window.top, self.window.width, self.window.height
@@ -163,10 +182,10 @@ class BotInstance(threading.Thread):
         if not self.device_id:
             print(f"[{self.window.title}] ERROR: device_id not set.")
             return
-        # Reduced debug output
-        y = y - offset_up  # Move click up by offset_up pixels
+        # Apply DPI scaling
+        x = int(x * self.dpi_scaling)
+        y = int((y - offset_up) * self.dpi_scaling)
         cmd = ["adb", "-s", self.device_id, "shell", "input", "tap", str(x), str(y)]
-        # print(f"[{self.window.title}] Running command: {' '.join(cmd)}")
         try:
             subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
         except Exception as e:
