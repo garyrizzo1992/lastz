@@ -35,7 +35,7 @@ def run_bot_rotation():
         return False
 
     while True:
-        for idx in range(1, instance_count+1):
+        for idx in range(0, instance_count+1):
             print(f"\n=== Starting rotation for MEmu{idx} ===")
             memu.start_vm(idx)
             # Wait for emulator window to appear
@@ -200,6 +200,7 @@ class BotInstance(threading.Thread):
         last_action_time = None  # None ensures first run triggers the action immediately
         last_hourly_action_time = None  # Run hourly action immediately on startup
         first_actions = 0
+        trained_this_iteration = 0  # Only train troops once per bot iteration
         print(f"[{self.window.title}] Bot started.")
         while self.running:
             if first_actions == 0:
@@ -245,13 +246,15 @@ class BotInstance(threading.Thread):
                     # print(f"[{self.window.title}] Clicking at ({tap_x}, {tap_y})")
                     self.adb_click(tap_x, tap_y)
                     time.sleep(1)
-                    if image_path == "images/troops/empty.png":
-                        # print(f"[{self.window.title}] Empty troops logic triggered.")
+                    if image_path == "images/troops/empty.png" and trained_this_iteration < 3:
+                        # Only train troops once per iteration
                         self.adb_click(419, 955)
                         time.sleep(1)
                         self.adb_click(100, 100)
                         time.sleep(1)
-                        cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]; subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+                        cmd = ["adb", "-s", self.device_id, "shell", "input", "keyevent", "111"]
+                        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, shell=True)
+                        trained_this_iteration += 1
             time.sleep(self.interval)
 
             screenshot, ignore_height = self.capture_window()
