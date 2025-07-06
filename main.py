@@ -34,94 +34,95 @@ def run_bot_rotation():
         print(f"Timeout waiting for emulator {device_id} to boot.")
         return False
 
-    for idx in range(1, instance_count+1):
-        print(f"\n=== Starting rotation for MEmu{idx} ===")
-        memu.start_vm(idx)
-        # Wait for emulator window to appear
-        for _ in range(60):
-            windows = gw.getAllWindows()
-            found = any(f"MEmu{idx}" in w.title for w in windows)
-            if found:
-                print(f"MEmu{idx} window detected.")
-                break
-            time.sleep(2)
-        else:
-            print(f"MEmu{idx} did not start in time, skipping.")
-            continue
+    while True:
+        for idx in range(1, instance_count+1):
+            print(f"\n=== Starting rotation for MEmu{idx} ===")
+            memu.start_vm(idx)
+            # Wait for emulator window to appear
+            for _ in range(60):
+                windows = gw.getAllWindows()
+                found = any(f"MEmu{idx}" in w.title for w in windows)
+                if found:
+                    print(f"MEmu{idx} window detected.")
+                    break
+                time.sleep(2)
+            else:
+                print(f"MEmu{idx} did not start in time, skipping.")
+                continue
 
 
-        # Get the window and device id
-        memu_windows = [w for w in gw.getAllWindows() if f"MEmu{idx}" in w.title]
-        if not memu_windows:
-            print(f"No window found for MEmu{idx}, skipping.")
+            # Get the window and device id
+            memu_windows = [w for w in gw.getAllWindows() if f"MEmu{idx}" in w.title]
+            if not memu_windows:
+                print(f"No window found for MEmu{idx}, skipping.")
+                memu.stop_vm(idx)
+                continue
+            window = memu_windows[0]
+            expected_port = 21513 + (idx-1)*10
+            device_id = f"127.0.0.1:{expected_port}"
+
+            # Wait for adb device to appear (up to 2 minutes)
+            adb_timeout = 120
+            adb_start = time.time()
+            while time.time() - adb_start < adb_timeout:
+                adb_devices = get_adb_devices()
+                if device_id in adb_devices:
+                    break
+                print(f"Waiting for adb device {device_id}...")
+                time.sleep(2)
+            else:
+                print(f"No adb device for {device_id} after waiting, skipping.")
+                memu.stop_vm(idx)
+                continue
+
+            # Wait for emulator to be fully booted
+            if not wait_for_emulator_ready(device_id, timeout=300):
+                print(f"MEmu{idx} ({device_id}) did not boot in time, skipping.")
+                memu.stop_vm(idx)
+                continue
+
+            # Launch the app: com.readygo.barrel.gp/com.im30.aps.debug.UnityPlayerActivityCustom
+            launch_cmd = [
+                "adb", "-s", device_id, "shell", "am", "start", "-n",
+                "com.readygo.barrel.gp/com.im30.aps.debug.UnityPlayerActivityCustom"
+            ]
+            print(f"Launching Last Z: Survival Shooter on {device_id}...")
+            subprocess.run(launch_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            time.sleep(60)  # Give the app more time to start (was 30)
+
+            # DPI scaling detection (Windows only)
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                user32.SetProcessDPIAware()
+                screen_w = user32.GetSystemMetrics(0)
+                screen_w_real = user32.GetSystemMetrics(78)  # SM_CXVIRTUALSCREEN
+                dpi_scaling = screen_w_real / screen_w if screen_w > 0 else 1.0
+                if dpi_scaling < 1.01:
+                    # fallback: try Windows API for DPI
+                    hdc = user32.GetDC(0)
+                    dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
+                    dpi_scaling = dpi / 96.0
+                print(f"[DPI] Detected scaling: {dpi_scaling:.2f}x")
+            except Exception as e:
+                print(f"[DPI] Could not determine DPI scaling, defaulting to 1.0x: {e}")
+                dpi_scaling = 1.0
+
+            bot = BotInstance(window, image_paths, interval, device_id, dpi_scaling=dpi_scaling)
+            bot.start()
+            print(f"Bot running on MEmu{idx} for {rotation_minutes} minutes...")
+            # Let the bot run for the rotation period
+            for _ in range(rotation_minutes*60):
+                if not bot.running:
+                    break
+                time.sleep(1)
+            bot.running = False
+            bot.join()
+            print(f"Stopping MEmu{idx}...")
             memu.stop_vm(idx)
-            continue
-        window = memu_windows[0]
-        expected_port = 21513 + (idx-1)*10
-        device_id = f"127.0.0.1:{expected_port}"
-
-        # Wait for adb device to appear (up to 2 minutes)
-        adb_timeout = 120
-        adb_start = time.time()
-        while time.time() - adb_start < adb_timeout:
-            adb_devices = get_adb_devices()
-            if device_id in adb_devices:
-                break
-            print(f"Waiting for adb device {device_id}...")
-            time.sleep(2)
-        else:
-            print(f"No adb device for {device_id} after waiting, skipping.")
-            memu.stop_vm(idx)
-            continue
-
-        # Wait for emulator to be fully booted
-        if not wait_for_emulator_ready(device_id, timeout=300):
-            print(f"MEmu{idx} ({device_id}) did not boot in time, skipping.")
-            memu.stop_vm(idx)
-            continue
-
-        # Launch the app: com.readygo.barrel.gp/com.im30.aps.debug.UnityPlayerActivityCustom
-        launch_cmd = [
-            "adb", "-s", device_id, "shell", "am", "start", "-n",
-            "com.readygo.barrel.gp/com.im30.aps.debug.UnityPlayerActivityCustom"
-        ]
-        print(f"Launching Last Z: Survival Shooter on {device_id}...")
-        subprocess.run(launch_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        time.sleep(30)  # Give the app a few seconds to start
-
-        # DPI scaling detection (Windows only)
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            user32.SetProcessDPIAware()
-            screen_w = user32.GetSystemMetrics(0)
-            screen_w_real = user32.GetSystemMetrics(78)  # SM_CXVIRTUALSCREEN
-            dpi_scaling = screen_w_real / screen_w if screen_w > 0 else 1.0
-            if dpi_scaling < 1.01:
-                # fallback: try Windows API for DPI
-                hdc = user32.GetDC(0)
-                dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
-                dpi_scaling = dpi / 96.0
-            print(f"[DPI] Detected scaling: {dpi_scaling:.2f}x")
-        except Exception as e:
-            print(f"[DPI] Could not determine DPI scaling, defaulting to 1.0x: {e}")
-            dpi_scaling = 1.0
-
-        bot = BotInstance(window, image_paths, interval, device_id, dpi_scaling=dpi_scaling)
-        bot.start()
-        print(f"Bot running on MEmu{idx} for {rotation_minutes} minutes...")
-        # Let the bot run for the rotation period
-        for _ in range(rotation_minutes*60):
-            if not bot.running:
-                break
-            time.sleep(1)
-        bot.running = False
-        bot.join()
-        print(f"Stopping MEmu{idx}...")
-        memu.stop_vm(idx)
-        # Wait a bit before next instance
-        time.sleep(10)
-    print("All rotations complete.")
+            # Wait a bit before next instance
+            time.sleep(10)
+        print("All rotations complete.")
 
 
 def get_adb_devices():
