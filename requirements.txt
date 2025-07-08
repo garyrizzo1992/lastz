@@ -1,6 +1,3 @@
 opencv-python
 numpy
-pygetwindow
-pyautogui
-keyboard
-pymemuc
+psutil
