@@ -35,7 +35,7 @@ def run_bot_rotation():
         return False
 
     while True:
-        for idx in range(0, instance_count+1):
+        for idx in range(1, instance_count+1):
             print(f"\n=== Starting rotation for MEmu{idx} ===")
             memu.start_vm(idx)
             # Wait for emulator window to appear
@@ -246,7 +246,10 @@ class BotInstance(threading.Thread):
                     # print(f"[{self.window.title}] Clicking at ({tap_x}, {tap_y})")
                     self.adb_click(tap_x, tap_y)
                     time.sleep(1)
-                    if image_path == "images/troops/empty.png" and trained_this_iteration < 3:
+                    if image_path == "images/troops/empty.png":
+                        if trained_this_iteration < 3:
+                            # Exit the upper loop if troops were trained (i.e., image_path == "images/troops/empty.png" and found)
+                            continue
                         # Only train troops once per iteration
                         self.adb_click(419, 955)
                         time.sleep(1)
@@ -260,7 +263,7 @@ class BotInstance(threading.Thread):
             screenshot, ignore_height = self.capture_window()
     def do_2min_action(self):
         # open world
-        self.adb_click(500, 960)
+        self.adb_click(970, 2050)
         time.sleep(1)
         screenshot, ignore_height = self.capture_window()
         if self.find_image("images/gather/2_2.png", screenshot, 0.95) is not None:
