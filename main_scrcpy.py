@@ -44,8 +44,17 @@ CONFIG = {
     },
     "game_coords": {
         "game1": (126, 1191),
-        "game2": (331, 1170),
-        "game3": (549, 1184)
+        "game2": (331, 1191),
+        "game3": (549, 1191),
+        "game4": (745,1191),
+        "game5": (957,1191)
+    },
+    "game_settings": {
+        "game1": {"train_troops": True},
+        "game2": {"train_troops": True},
+        "game3": {"train_troops": True},
+        "game4": {"train_troops": True},
+        "game5": {"train_troops": True}
     },
     "action_coords": {
         "open_world": (972, 2070),
@@ -57,8 +66,8 @@ CONFIG = {
         "alliance_gifts_claimall": (561, 2070),
         "gather_search": (565, 2062),
         "gather_confirm_march": (540, 1569),
-        "train_troops_confirm": (419, 955),
-        "train_troops_select": (100, 100),
+        "train_troops_confirm": (820, 2034),
+        "train_troops_select": (10, 10),
         "gather_button": (536, 1252),
         "middle_screen": (540, 1072),
         "8hrs_chest_collect": (558, 1594)
@@ -323,13 +332,14 @@ class ScrcpyBot:
         time.sleep(CONFIG["timing"]["action_delay"])
         screenshot = self.adb_screenshot()
 
-        resource = random.choice(["Zent", "Wood", "Food"])
+        # resource = random.choice(["Zent", "Wood", "Food"])
+        resource = random.choice(["Food"])
         logging.info(f"Searching for {resource}.")
 
-        if resource == "Wood" and self.find_template("lumberyard", screenshot, click=True):
+        if resource == "Wood":
+            self.find_template("lumberyard", screenshot, click=True)
             self.select_resource_level()
-        elif resource == "Food" and self.find_template("farmyard", screenshot, click=True):
-            self.select_resource_level()
+        elif resource == "Food":
             start_loc = self.find_template("lumberyard", screenshot)
             found_farmyard = False
             if start_loc:
@@ -337,7 +347,7 @@ class ScrcpyBot:
                 h, w = self.templates["lumberyard"].shape[:2]
                 start_x, start_y = start_loc[0] + w // 2, start_loc[1] + h // 2
                 for _ in range(3):
-                    self.adb_swipe(start_x, start_y, start_x + 300, start_y, CONFIG["timing"]["swipe_duration"])
+                    self.adb_swipe(start_x, start_y, start_x - 300, start_y, CONFIG["timing"]["swipe_duration"])
                     time.sleep(CONFIG["timing"]["action_delay"])
                     screenshot = self.adb_screenshot()
                     if self.find_template("farmyard", screenshot, click=True):
@@ -404,9 +414,9 @@ class ScrcpyBot:
             self.adb_keyevent(111) # ESC
             time.sleep(1)
 
-    def run_one_cycle(self):
+    def run_one_cycle(self, game_name):
         """Performs one cycle of passive actions and checks for periodic tasks."""
-        logging.info("--- New Cycle ---")
+        logging.info(f"--- New Cycle for {game_name} ---")
         self.ensure_base_view() # Return to a known state
         now = time.time()
         screenshot = self.adb_screenshot()
@@ -416,7 +426,7 @@ class ScrcpyBot:
 
         # --- Passive Actions (run every cycle) ---
         clicked_something = False
-        passive_checks = ["exp", "food", "electric", "zent", "wood", "fuel", "help"]
+        passive_checks = ["exp", "food", "electric", "zent", "wood", "fuel", "help", "raider", "assulter", "shooter"]
         for name in passive_checks:
             if self.find_template(name, screenshot, click=True):
                 clicked_something = True
@@ -427,22 +437,23 @@ class ScrcpyBot:
                 
         # do research 
         if self.find_template("research_free", screenshot, click=True, threshold=0.9):
+            time.sleep(CONFIG["timing"]["long_delay"])
+            self.find_template("research_recommended2", self.adb_screenshot(), click=True)
             time.sleep(CONFIG["timing"]["action_delay"])
-            self.find_template("research_recommended2", screenshot, click=True)
-            time.sleep(CONFIG["timing"]["action_delay"])
-            self.find_template("research_confirm", screenshot, click=True)
+            self.find_template("research_confirm", self.adb_screenshot(), click=True)
             self.ensure_base_view()
 
             
 
-        # Train troops if a bay is empty
-        # if self.find_template("empty_troops", screenshot, click=True):
-        #     logging.info("Training troops.")
-        #     self.adb_tap(*CONFIG["action_coords"]["train_troops_confirm"])
-        #     time.sleep(CONFIG["timing"]["action_delay"])
-        #     self.adb_tap(*CONFIG["action_coords"]["train_troops_select"])
-        #     time.sleep(CONFIG["timing"]["action_delay"])
-        #     self.adb_keyevent(111) # ESC
+        # Train troops if a bay is empty and the setting is enabled for this game
+        if CONFIG["game_settings"].get(game_name, {}).get("train_troops", False):
+            if self.find_template("empty_troops", screenshot, click=True):
+                logging.info(f"Training troops for {game_name}.")
+                self.adb_tap(*CONFIG["action_coords"]["train_troops_confirm"])
+                time.sleep(CONFIG["timing"]["action_delay"])
+                self.adb_tap(*CONFIG["action_coords"]["train_troops_select"])
+                time.sleep(CONFIG["timing"]["action_delay"])
+                self.adb_keyevent(111) # ESC
         
         if self.find_template("collect_8hrs", screenshot, click=True):
             logging.info("Collecting 8hrs chest.")
@@ -520,7 +531,7 @@ def main():
                 
                 start_time = time.time()
                 while time.time() - start_time < rotation_seconds:
-                    bot.run_one_cycle()
+                    bot.run_one_cycle(game)
                 
                 logging.info(f"Finished with {game}. Rotating to next app.")
 
