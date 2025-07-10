@@ -438,7 +438,7 @@ class ScrcpyBot:
         # do research 
         if self.find_template("research_free", screenshot, click=True, threshold=0.9):
             time.sleep(CONFIG["timing"]["long_delay"])
-            self.find_template("research_recommended2", self.adb_screenshot(), click=True)
+            self.find_template("research_recommended2", self.adb_screenshot(), click=True, threshold=0.95)
             time.sleep(CONFIG["timing"]["action_delay"])
             self.find_template("research_confirm", self.adb_screenshot(), click=True)
             self.ensure_base_view()
