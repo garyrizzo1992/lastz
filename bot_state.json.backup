@@ -1,0 +1,25 @@
+{
+  "last_train_troops_check": 1752244697.734768,
+  "last_research_check": 1752244326.085409,
+  "last_collect_8hrs_check": 1752244517.476968,
+  "last_2min_action_time": 1752244850.931874,
+  "last_hourly_action_time": 1752244449.1531901,
+  "troops_training": true,
+  "research_in_progress": true,
+  "all_troops_busy": true,
+  "current_game": "game5",
+  "bot_start_time": 1752234929.1715183,
+  "total_cycles": 323,
+  "actions_performed": {
+    "passive_actions": 161,
+    "research_started": 3,
+    "research_completed": 0,
+    "troops_trained": 4,
+    "chests_collected": 0,
+    "gather_attempts": 55,
+    "hourly_actions": 3
+  },
+  "last_passive_checks_check": 1752244917.4574013,
+  "current_rotation_start": 1752244894.7180607,
+  "total_rotations": 9
+}
