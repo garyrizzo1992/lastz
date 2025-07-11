@@ -4367,3 +4367,39 @@
 2025-07-11 16:48:15 - bot - INFO - [main:1062] - ============================================================
 2025-07-11 16:48:15 - bot - INFO - [main:1066] - Bot uptime: 2:52:46
 2025-07-11 16:48:15 - bot - INFO - [main:1067] - Total cycles: 324
+2025-07-11 16:55:35 - state - INFO - [_load_state:120] - Loaded state from bot_state.json
+2025-07-11 16:55:35 - state - INFO - [_cleanup_state_keys:183] - Migrating old state format to per-game format
+2025-07-11 16:55:35 - bot - INFO - [main:1060] - ============================================================
+2025-07-11 16:55:35 - bot - INFO - [main:1061] - LastZ Bot starting - Debug Level: 1
+2025-07-11 16:55:35 - bot - INFO - [main:1062] - ============================================================
+2025-07-11 16:55:35 - bot - INFO - [main:1066] - Bot uptime: 3:00:06
+2025-07-11 16:55:35 - bot - INFO - [main:1067] - Total cycles: 324
+2025-07-11 16:58:39 - state - INFO - [_load_state:120] - Loaded state from bot_state.json
+2025-07-11 16:58:39 - state - INFO - [_cleanup_state_keys:183] - Migrating old state format to per-game format
+2025-07-11 16:58:39 - bot - INFO - [main:1060] - ============================================================
+2025-07-11 16:58:39 - bot - INFO - [main:1061] - LastZ Bot starting - Debug Level: 1
+2025-07-11 16:58:39 - bot - INFO - [main:1062] - ============================================================
+2025-07-11 16:58:39 - bot - INFO - [main:1066] - Bot uptime: 3:03:10
+2025-07-11 16:58:39 - bot - INFO - [main:1067] - Total cycles: 324
+2025-07-11 16:59:01 - state - INFO - [_load_state:120] - Loaded state from bot_state.json
+2025-07-11 16:59:01 - state - INFO - [_cleanup_state_keys:183] - Migrating old state format to per-game format
+2025-07-11 16:59:01 - bot - INFO - [main:1060] - ============================================================
+2025-07-11 16:59:01 - bot - INFO - [main:1061] - LastZ Bot starting - Debug Level: 1
+2025-07-11 16:59:01 - bot - INFO - [main:1062] - ============================================================
+2025-07-11 16:59:01 - bot - INFO - [main:1066] - Bot uptime: 3:03:32
+2025-07-11 16:59:01 - bot - INFO - [main:1067] - Total cycles: 324
+2025-07-11 16:59:09 - state - INFO - [_load_state:120] - Loaded state from bot_state.json
+2025-07-11 16:59:09 - state - INFO - [_cleanup_state_keys:183] - Migrating old state format to per-game format
+2025-07-11 16:59:09 - bot - INFO - [main:1060] - ============================================================
+2025-07-11 16:59:09 - bot - INFO - [main:1061] - LastZ Bot starting - Debug Level: 1
+2025-07-11 16:59:09 - bot - INFO - [main:1062] - ============================================================
+2025-07-11 16:59:09 - bot - INFO - [main:1066] - Bot uptime: 3:03:40
+2025-07-11 16:59:09 - bot - INFO - [main:1067] - Total cycles: 324
+2025-07-11 16:59:14 - state - INFO - [_load_state:120] - Loaded state from bot_state.json
+2025-07-11 16:59:14 - bot - INFO - [main:923] - ============================================================
+2025-07-11 16:59:14 - bot - INFO - [main:924] - LastZ Bot starting - Debug Level: 1
+2025-07-11 16:59:14 - bot - INFO - [main:925] - ============================================================
+2025-07-11 16:59:14 - bot - INFO - [main:929] - Bot uptime: 3:03:45
+2025-07-11 16:59:14 - bot - INFO - [main:930] - Total cycles: 324
+2025-07-11 16:59:14 - bot - INFO - [main:931] - Actions performed: {'passive_actions': 161, 'research_started': 3, 'research_completed': 0, 'troops_trained': 4, 'chests_collected': 0, 'gather_attempts': 55, 'hourly_actions': 3}
+2025-07-11 16:59:14 - bot - INFO - [start_scrcpy:379] - Starting scrcpy from c:\Users\Gary\Documents\vscode\lastz\scrcpy\scrcpy.exe

@@ -50,8 +50,8 @@ CONFIG = {
         "game1": (126, 1191),
         "game2": (331, 1191),
         "game3": (549, 1191),
-        "game4": (745,1191)
-        # "game5": (957,1191)
+        "game4": (745,1191),
+        "game5": (957,1191)
     },
     "game_settings": {
         "game1": {"train_troops": True},
@@ -124,83 +124,49 @@ class StateManager:
         except (json.JSONDecodeError, IOError) as e:
             self.logger.warning(f"Failed to load state from {self.state_file}: {e}")
         
-        # Return default state with per-game tracking
+        # Return default state
         default_state = {
-            "global": {
-                "bot_start_time": time.time(),
-                "total_cycles": 0,
-                "total_rotations": 0,
-                "current_game": None,
-                "current_rotation_start": 0,
-                "last_hourly_action_time": 0,
-                "actions_performed": {
-                    "passive_actions": 0,
-                    "research_started": 0,
-                    "research_completed": 0,
-                    "troops_trained": 0,
-                    "chests_collected": 0,
-                    "gather_attempts": 0,
-                    "hourly_actions": 0
-                }
-            },
-            "games": {}  # Per-game state will be created as needed
-        }
-        
-        # Initialize per-game states for all configured games
-        for game_name in CONFIG["game_coords"].keys():
-            default_state["games"][game_name] = self._create_default_game_state()
-        
-        self.logger.info("Created default state with per-game tracking")
-        return default_state
-    
-    def _create_default_game_state(self):
-        """Create default state for a single game."""
-        return {
             "last_train_troops_check": 0,
             "last_research_check": 0,
             "last_collect_8hrs_check": 0,
             "last_passive_checks_check": 0,
             "last_2min_action_time": 0,
+            "last_hourly_action_time": 0,
             "troops_training": False,
             "research_in_progress": False,
             "all_troops_busy": False,
-            "last_launch_time": 0,
-            "total_cycles_this_game": 0,
-            "actions_this_session": {
+            "current_game": None,
+            "current_rotation_start": 0,
+            "bot_start_time": time.time(),
+            "total_cycles": 0,
+            "total_rotations": 0,
+            "actions_performed": {
                 "passive_actions": 0,
                 "research_started": 0,
                 "research_completed": 0,
                 "troops_trained": 0,
                 "chests_collected": 0,
-                "gather_attempts": 0
+                "gather_attempts": 0,
+                "hourly_actions": 0
             }
         }
+        self.logger.info("Created default state")
+        return default_state
     
     def _cleanup_state_keys(self, state):
-        """Clean up and migrate old state format to new per-game format."""
-        # If this is an old format state, migrate it
-        if "games" not in state:
-            self.logger.info("Migrating old state format to per-game format")
-            
-            # Save old global values
-            old_global_state = {
-                "bot_start_time": state.get("bot_start_time", time.time()),
-                "total_cycles": state.get("total_cycles", 0),
-                "total_rotations": state.get("total_rotations", 0),
-                "current_game": state.get("current_game"),
-                "current_rotation_start": state.get("current_rotation_start", 0),
-                "last_hourly_action_time": state.get("last_hourly_action_time", 0),
-                "actions_performed": state.get("actions_performed", {})
-            }
-            
-            # Create new structure
-            state.clear()
-            state["global"] = old_global_state
-            state["games"] = {}
-            
-            # Initialize all games
-            for game_name in CONFIG["game_coords"].keys():
-                state["games"][game_name] = self._create_default_game_state()
+        """Clean up inconsistent state keys from older versions."""
+        # Fix the passive checks key inconsistency
+        if "last_passive_checks" in state and "last_passive_checks_check" not in state:
+            state["last_passive_checks_check"] = state.pop("last_passive_checks")
+        elif "last_passive_checks" in state and "last_passive_checks_check" in state:
+            # Remove the old inconsistent key
+            state.pop("last_passive_checks")
+        
+        # Ensure all required keys exist
+        if "current_rotation_start" not in state:
+            state["current_rotation_start"] = 0
+        if "total_rotations" not in state:
+            state["total_rotations"] = 0
 
     def save_state(self):
         """Save current state to file."""
@@ -222,176 +188,78 @@ class StateManager:
             self.logger.error(f"Failed to save state: {e}")
     
     def get(self, key, default=None):
-        """Get a value from global state."""
-        if "global" not in self.state:
-            self._cleanup_state_keys(self.state)
-        return self.state["global"].get(key, default)
+        """Get a value from state."""
+        return self.state.get(key, default)
     
     def set(self, key, value):
-        """Set a value in global state."""
-        if "global" not in self.state:
-            self._cleanup_state_keys(self.state)
-        self.state["global"][key] = value
+        """Set a value in state."""
+        self.state[key] = value
+        self.save_state()
+    
+    def update(self, updates):
+        """Update multiple values in state."""
+        self.state.update(updates)
         self.save_state()
     
     def increment_counter(self, key):
-        """Increment a counter in global actions."""
-        if "global" not in self.state:
-            self._cleanup_state_keys(self.state)
+        """Increment a counter in the actions_performed section."""
+        if "actions_performed" not in self.state:
+            self.state["actions_performed"] = {}
         
-        if "actions_performed" not in self.state["global"]:
-            self.state["global"]["actions_performed"] = {}
-        
-        current_value = self.state["global"]["actions_performed"].get(key, 0)
-        self.state["global"]["actions_performed"][key] = current_value + 1
+        current_value = self.state["actions_performed"].get(key, 0)
+        self.state["actions_performed"][key] = current_value + 1
         self.save_state()
     
-    def get_game_state(self, game_name, key, default=None):
-        """Get a value from a specific game's state."""
-        if "games" not in self.state:
-            self._cleanup_state_keys(self.state)
-        
-        if game_name not in self.state["games"]:
-            self.state["games"][game_name] = self._create_default_game_state()
-            self.save_state()
-        
-        return self.state["games"][game_name].get(key, default)
-    
-    def set_game_state(self, game_name, key, value):
-        """Set a value in a specific game's state."""
-        if "games" not in self.state:
-            self._cleanup_state_keys(self.state)
-        
-        if game_name not in self.state["games"]:
-            self.state["games"][game_name] = self._create_default_game_state()
-        
-        self.state["games"][game_name][key] = value
-        self.save_state()
-    
-    def update_game_state(self, game_name, updates):
-        """Update multiple values in a specific game's state."""
-        if "games" not in self.state:
-            self._cleanup_state_keys(self.state)
-        
-        if game_name not in self.state["games"]:
-            self.state["games"][game_name] = self._create_default_game_state()
-        
-        self.state["games"][game_name].update(updates)
-        self.save_state()
-    
-    def increment_game_counter(self, game_name, key):
-        """Increment a counter in a specific game's actions."""
-        if "games" not in self.state:
-            self._cleanup_state_keys(self.state)
-        
-        if game_name not in self.state["games"]:
-            self.state["games"][game_name] = self._create_default_game_state()
-        
-        if "actions_this_session" not in self.state["games"][game_name]:
-            self.state["games"][game_name]["actions_this_session"] = {}
-        
-        current_value = self.state["games"][game_name]["actions_this_session"].get(key, 0)
-        self.state["games"][game_name]["actions_this_session"][key] = current_value + 1
-        
-        # Also increment global counter
-        if "actions_performed" not in self.state["global"]:
-            self.state["global"]["actions_performed"] = {}
-        
-        global_value = self.state["global"]["actions_performed"].get(key, 0)
-        self.state["global"]["actions_performed"][key] = global_value + 1
-        
-        self.save_state()
-    
-    def should_check_action(self, game_name, action_name, interval_key):
-        """Check if enough time has passed since the last action check for a specific game."""
+    def should_check_action(self, action_name, interval_key):
+        """Check if enough time has passed since the last action check."""
         now = time.time()
-        last_check = self.get_game_state(game_name, f"last_{action_name}_check", 0)
+        last_check = self.get(f"last_{action_name}_check", 0)
         interval = CONFIG["timing"][interval_key]
         return now - last_check >= interval
     
-    def update_action_state(self, game_name, action_name, **kwargs):
-        """Update the state for a specific action in a specific game."""
+    def update_action_state(self, action_name, **kwargs):
+        """Update the state for a specific action."""
         updates = {f"last_{action_name}_check": time.time()}
         updates.update(kwargs)
-        self.update_game_state(game_name, updates)
+        self.update(updates)
     
     def start_game_rotation(self, game_name):
         """Mark the start of a new game rotation."""
-        self.state["global"]["current_game"] = game_name
-        self.state["global"]["current_rotation_start"] = time.time()
-        self.set_game_state(game_name, "last_launch_time", time.time())
-        self.save_state()
+        self.update({
+            "current_game": game_name,
+            "current_rotation_start": time.time()
+        })
         self.logger.info(f"Started rotation for {game_name}")
     
     def end_game_rotation(self, game_name):
         """Mark the end of a game rotation."""
-        rotation_duration = time.time() - self.state["global"].get("current_rotation_start", time.time())
-        self.state["global"]["current_game"] = None
-        self.state["global"]["current_rotation_start"] = 0
-        self.state["global"]["total_rotations"] = self.state["global"].get("total_rotations", 0) + 1
-        self.save_state()
+        rotation_duration = time.time() - self.get("current_rotation_start", time.time())
+        self.update({
+            "current_game": None,
+            "current_rotation_start": 0,
+            "total_rotations": self.get("total_rotations", 0) + 1
+        })
         self.logger.info(f"Ended rotation for {game_name} after {rotation_duration:.1f}s")
     
-    def get_stats(self, game_name=None):
-        """Get bot statistics, optionally for a specific game."""
-        if "global" not in self.state:
-            self._cleanup_state_keys(self.state)
-        
+    def get_stats(self):
+        """Get bot statistics."""
         now = time.time()
-        start_time = self.state["global"].get("bot_start_time", now)
+        start_time = self.get("bot_start_time", now)
         uptime = now - start_time
-        current_rotation_start = self.state["global"].get("current_rotation_start", 0)
+        current_rotation_start = self.get("current_rotation_start", 0)
         current_rotation_duration = now - current_rotation_start if current_rotation_start > 0 else 0
         
-        stats = {
+        return {
             "uptime_seconds": uptime,
             "uptime_formatted": str(datetime.timedelta(seconds=int(uptime))),
-            "total_cycles": self.state["global"].get("total_cycles", 0),
-            "total_rotations": self.state["global"].get("total_rotations", 0),
-            "current_game": self.state["global"].get("current_game", "None"),
+            "total_cycles": self.get("total_cycles", 0),
+            "total_rotations": self.get("total_rotations", 0),
+            "current_game": self.get("current_game", "None"),
             "current_rotation_duration": current_rotation_duration,
-            "global_actions_performed": self.state["global"].get("actions_performed", {}),
+            "actions_performed": self.get("actions_performed", {}),
+            "troops_busy": self.get("all_troops_busy", False),
+            "research_in_progress": self.get("research_in_progress", False)
         }
-        
-        if game_name:
-            # Add game-specific stats
-            game_state = self.state["games"].get(game_name, {})
-            stats["game_specific"] = {
-                "last_launch": game_state.get("last_launch_time", 0),
-                "cycles_this_game": game_state.get("total_cycles_this_game", 0),
-                "actions_this_session": game_state.get("actions_this_session", {}),
-                "troops_busy": game_state.get("all_troops_busy", False),
-                "research_in_progress": game_state.get("research_in_progress", False),
-                "troops_training": game_state.get("troops_training", False)
-            }
-        
-        return stats
-    
-    # Legacy methods for global state (maintain compatibility)
-    def get(self, key, default=None):
-        """Get a value from global state."""
-        if "global" not in self.state:
-            self._cleanup_state_keys(self.state)
-        return self.state["global"].get(key, default)
-    
-    def set(self, key, value):
-        """Set a value in global state."""
-        if "global" not in self.state:
-            self._cleanup_state_keys(self.state)
-        self.state["global"][key] = value
-        self.save_state()
-    
-    def increment_counter(self, key):
-        """Increment a counter in global actions."""
-        if "global" not in self.state:
-            self._cleanup_state_keys(self.state)
-        
-        if "actions_performed" not in self.state["global"]:
-            self.state["global"]["actions_performed"] = {}
-        
-        current_value = self.state["global"]["actions_performed"].get(key, 0)
-        self.state["global"]["actions_performed"][key] = current_value + 1
-        self.save_state()
 
 # --- UTILITY FUNCTIONS ---
 
@@ -831,21 +699,21 @@ class ScrcpyBot:
         
         return False
 
-    def do_2min_action(self, game_name):
+    def do_2min_action(self):
         """
-        Performs one attempt to send troops to gather (now game-specific).
+        Performs one attempt to send troops to gather.
         Returns True if all troops are busy, False otherwise.
         """
-        self.game_logger.info(f"Performing gather resource action for {game_name}.")
+        self.game_logger.info("Performing gather resource action.")
         self.ensure_base_view()
         self.adb_tap(*CONFIG["action_coords"]["open_world"])
         time.sleep(CONFIG["timing"]["action_delay"])
 
         screenshot = self.adb_screenshot()
         if self.find_template("troops_2_of_2", screenshot, threshold=0.05):
-            self.game_logger.info(f"All troops are busy in {game_name}. Gather action complete.")
+            self.game_logger.info("All troops are busy. Gather action complete.")
             self.adb_tap(*CONFIG["action_coords"]["open_world"]) # Close world view
-            self.state.set_game_state(game_name, "all_troops_busy", True)
+            self.state.set("all_troops_busy", True)
             return True # Goal met
 
         # If troops are available, proceed to send one
@@ -870,9 +738,9 @@ class ScrcpyBot:
         time.sleep(CONFIG["timing"]["long_delay"]) # Wait for march to start
         self.ensure_base_view()
         
-        # Update state for this specific game
-        self.state.increment_game_counter(game_name, "gather_attempts")
-        self.state.set_game_state(game_name, "all_troops_busy", False)
+        # Update state
+        self.state.increment_counter("gather_attempts")
+        self.state.set("all_troops_busy", False)
         return False # Troops were sent, but maybe more are available
 
     def do_hourly_action(self):
@@ -924,46 +792,46 @@ class ScrcpyBot:
 
         actions_performed = []
 
-        # --- Passive Actions (per-game state) ---
-        if self.state.should_check_action(game_name, "passive_checks", "passive_checks_interval"):
-            self.state_logger.info(f"Checking passive actions for {game_name}...")
+        # --- Passive Actions ---
+        if self.state.should_check_action("passive_checks", "passive_checks_interval"):
+            self.state_logger.info("Checking passive actions...")
             passive_checks = ["exp", "food", "electric", "zent", "wood", "fuel", "help", "raider", "assulter", "shooter"]
             
             for name in passive_checks:
                 if self.find_template(name, screenshot, click=True):
                     actions_performed.append(f"passive_{name}")
-                    self.state.increment_game_counter(game_name, "passive_actions")
+                    self.state.increment_counter("passive_actions")
                     time.sleep(CONFIG["timing"]["action_delay"])
                     screenshot = self.adb_screenshot()
                     if screenshot is None: break
             
-            self.state.update_action_state(game_name, "passive_checks")
+            self.state.update_action_state("passive_checks")
             
-        # --- Research Actions (per-game state) ---
-        if self.state.should_check_action(game_name, "research", "research_check_interval"):
-            self.state_logger.info(f"Checking research actions for {game_name}...")
+        # --- Research Actions ---
+        if self.state.should_check_action("research", "research_check_interval"):
+            self.state_logger.info("Checking research actions...")
             if self.find_template("research_free", screenshot, click=True, threshold=0.05):
                 time.sleep(CONFIG["timing"]["long_delay"])
                 if self.find_template("research_complete", self.adb_screenshot(), click=True, threshold=0.05):
                     self.game_logger.info("Research completed and collected")
-                    self.state.update_action_state(game_name, "research", research_in_progress=False)
-                    self.state.increment_game_counter(game_name, "research_completed")
+                    self.state.update_action_state("research", research_in_progress=False)
+                    self.state.increment_counter("research_completed")
                     actions_performed.append("research_complete")
                 else:
                     self.find_template("research_recommended2", self.adb_screenshot(), click=True, threshold=0.05)
                     time.sleep(CONFIG["timing"]["action_delay"])
                     self.find_template("research_confirm", self.adb_screenshot(), click=True, threshold=0.05)
-                    self.state.update_action_state(game_name, "research", research_in_progress=True)
-                    self.state.increment_game_counter(game_name, "research_started")
+                    self.state.update_action_state("research", research_in_progress=True)
+                    self.state.increment_counter("research_started")
                     self.ensure_base_view()
                     actions_performed.append("research_started")
             else:
-                self.state.update_action_state(game_name, "research")
+                self.state.update_action_state("research")
 
-        # --- Train Troops (per-game state) ---
+        # --- Train Troops ---
         if (CONFIG["game_settings"].get(game_name, {}).get("train_troops", False) and 
-            self.state.should_check_action(game_name, "train_troops", "train_troops_check_interval")):
-            self.state_logger.info(f"Checking troop training for {game_name}...")
+            self.state.should_check_action("train_troops", "train_troops_check_interval")):
+            self.state_logger.info("Checking troop training...")
             if self.find_template("empty_troops", screenshot, click=True):
                 self.game_logger.info(f"Training troops for {game_name}")
                 self.adb_tap(*CONFIG["action_coords"]["train_troops_confirm"])
@@ -971,51 +839,46 @@ class ScrcpyBot:
                 self.adb_tap(*CONFIG["action_coords"]["train_troops_select"])
                 time.sleep(CONFIG["timing"]["action_delay"])
                 self.adb_keyevent(111)
-                self.state.update_action_state(game_name, "train_troops", troops_training=True)
-                self.state.increment_game_counter(game_name, "troops_trained")
+                self.state.update_action_state("train_troops", troops_training=True)
+                self.state.increment_counter("troops_trained")
                 actions_performed.append("train_troops")
             else:
-                self.state.update_action_state(game_name, "train_troops")
+                self.state.update_action_state("train_troops")
         
-        # --- Collect 8hrs chest (per-game state) ---
-        if self.state.should_check_action(game_name, "collect_8hrs", "collect_8hrs_check_interval"):
-            self.state_logger.info(f"Checking 8hrs chest collection for {game_name}...")
+        # --- Collect 8hrs chest ---
+        if self.state.should_check_action("collect_8hrs", "collect_8hrs_check_interval"):
+            self.state_logger.info("Checking 8hrs chest collection...")
             if self.find_template("collect_8hrs", screenshot, click=True):
                 self.game_logger.info("Collecting 8hrs chest")
                 self.adb_tap(*CONFIG["action_coords"]["8hrs_chest_collect"])
                 time.sleep(CONFIG["timing"]["action_delay"])
                 self.ensure_base_view()
-                self.state.increment_game_counter(game_name, "chests_collected")
+                self.state.increment_counter("chests_collected")
                 actions_performed.append("collect_8hrs")
-            self.state.update_action_state(game_name, "collect_8hrs")
+            self.state.update_action_state("collect_8hrs")
 
-        # --- Periodic Actions (per-game state for gathering) ---
-        if now - self.state.get_game_state(game_name, "last_2min_action_time", 0) >= CONFIG["timing"]["periodic_action_interval_2min"]:
-            self.state.update_game_state(game_name, {"all_troops_busy": False, "last_2min_action_time": now})
-            self.state_logger.info(f"Reset troop busy flag for {game_name}")
+        # --- Periodic Actions ---
+        if now - self.state.get("last_2min_action_time", 0) >= CONFIG["timing"]["periodic_action_interval_2min"]:
+            self.state.update({"all_troops_busy": False, "last_2min_action_time": now})
+            self.state_logger.info("Reset troop busy flag")
         
-        if not self.state.get_game_state(game_name, "all_troops_busy", False):
-            self.state_logger.info(f"Attempting to send troops to gather for {game_name}")
-            all_troops_busy = self.do_2min_action(game_name)
+        if not self.state.get("all_troops_busy", False):
+            self.state_logger.info("Attempting to send troops to gather")
+            all_troops_busy = self.do_2min_action()
             if all_troops_busy:
                 actions_performed.append("gather_troops_busy")
             else:
                 actions_performed.append("gather_troops_sent")
 
-        # --- Hourly Actions (global, not per-game) ---
         if now - self.state.get("last_hourly_action_time", 0) >= CONFIG["timing"]["periodic_action_interval_hourly"]:
             self.do_hourly_action()
             actions_performed.append("hourly_action")
 
-        # Update cycle counter for this game
-        current_cycles = self.state.get_game_state(game_name, "total_cycles_this_game", 0)
-        self.state.set_game_state(game_name, "total_cycles_this_game", current_cycles + 1)
-        
-        # Update global cycle counter
+        # Update cycle counter
         self.state.set("total_cycles", self.state.get("total_cycles", 0) + 1)
         
         cycle_duration = time.time() - cycle_start
-        self.game_logger.info(f"Cycle completed for {game_name} in {cycle_duration:.2f}s. Actions: {actions_performed}")
+        self.game_logger.info(f"Cycle completed in {cycle_duration:.2f}s. Actions: {actions_performed}")
         
         time.sleep(CONFIG["timing"]["interval"])
 
