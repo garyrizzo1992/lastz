@@ -49,16 +49,16 @@ CONFIG = {
     "game_coords": {
         "game1": (126, 1191),
         "game2": (331, 1191),
-        "game3": (549, 1191),
-        "game4": (745,1191),
-        "game5": (957,1191)
+        "game3": (549, 1191)
+        #"game4": (745,1191),
+        #"game5": (957,1191)
     },
     "game_settings": {
         "game1": {"train_troops": True},
         "game2": {"train_troops": True},
-        "game3": {"train_troops": True}
-        #"game4": {"train_troops": True}
-        #"game5": {"train_troops": True}
+        "game3": {"train_troops": True},
+        "game4": {"train_troops": True},
+        "game5": {"train_troops": True}
     },
     "action_coords": {
         "open_world": (972, 2070),
