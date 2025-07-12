@@ -56,8 +56,8 @@ CONFIG = {
     "game_settings": {
         "game1": {"train_troops": True},
         "game2": {"train_troops": True},
-        "game3": {"train_troops": True},
-        "game4": {"train_troops": True}
+        "game3": {"train_troops": True}
+        #"game4": {"train_troops": True}
         #"game5": {"train_troops": True}
     },
     "action_coords": {
