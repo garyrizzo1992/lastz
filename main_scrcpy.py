@@ -720,8 +720,11 @@ class ScrcpyBot:
         self.adb_tap(*CONFIG["action_coords"]["search_button"])
         time.sleep(CONFIG["timing"]["action_delay"])
 
-        # Search for resources
-        resource = random.choice(["Food"])  # Can be expanded later
+        # Search for resources with weighted selection
+        resources = ["Food", "Wood", "Zent"]
+        weights = [10, 40, 50]  # Food: 10%, Wood: 40%, Zent: 50%
+        resource = random.choices(resources, weights=weights, k=1)[0]
+        
         if self.search_and_gather_resource(resource):
             self.game_logger.info(f"Successfully found and selected {resource}")
         else:
